@@ -14,7 +14,7 @@ interface AgentStatus {
 }
 
 const AGENT_CONFIGS = [
-  { id: "smarty", name: "Smarty", emoji: "💡", color: "var(--accent)", agentId: "main" },
+  { id: "smarty", name: "Smarty", emoji: "💡", color: "var(--accent)", agentId: "smarty", agentIdFallback: "main" },
   { id: "scout", name: "Scout", emoji: "🔍", color: "var(--green)", agentId: "scout" },
   { id: "architect", name: "Architect", emoji: "🏗️", color: "var(--blue)", subagent: true },
   { id: "developer", name: "Developer", emoji: "⚡", color: "var(--purple)", subagent: true },
@@ -29,14 +29,13 @@ export async function GET() {
     const now = Date.now();
     const agents: AgentStatus[] = [];
 
-    // Read main agent sessions
-    const sessionsPath = path.join(OPENCLAW_ROOT, "agents/main/sessions/sessions.json");
+    // Read sessions from all agent dirs and merge
     let sessions: Record<string, any> = {};
-    try {
-      const sessionsRaw = await readFile(sessionsPath, "utf-8");
-      sessions = JSON.parse(sessionsRaw);
-    } catch {
-      // Sessions file doesn't exist or can't be read
+    for (const dir of ["main", "smarty", "scout"]) {
+      try {
+        const raw = await readFile(path.join(OPENCLAW_ROOT, `agents/${dir}/sessions/sessions.json`), "utf-8");
+        Object.assign(sessions, JSON.parse(raw));
+      } catch {}
     }
 
     // Read subagent runs
@@ -95,7 +94,8 @@ export async function GET() {
       } else {
         // Lead agent (Smarty or Scout)
         const sessionKey = `agent:${config.agentId}:main`;
-        const session = sessions[sessionKey];
+        const fallbackKey = (config as any).agentIdFallback ? `agent:${(config as any).agentIdFallback}:main` : null;
+        const session = sessions[sessionKey] || (fallbackKey ? sessions[fallbackKey] : null);
 
         if (session && session.updatedAt) {
           const timeSinceUpdate = now - session.updatedAt;

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { readFile } from "fs/promises";
+import { readFile, stat } from "fs/promises";
 import path from "path";
 import { OPENCLAW_ROOT } from "@/lib/config";
 
@@ -92,42 +92,32 @@ export async function GET() {
           }
         }
       } else {
-        // Lead agent (Smarty or Scout)
+        // Lead agent (Smarty or Scout) — use sessions.json mtime for accurate activity
         const sessionKey = `agent:${config.agentId}:main`;
         const fallbackKey = (config as any).agentIdFallback ? `agent:${(config as any).agentIdFallback}:main` : null;
         const session = sessions[sessionKey] || (fallbackKey ? sessions[fallbackKey] : null);
 
-        if (session && session.updatedAt) {
-          const timeSinceUpdate = now - session.updatedAt;
+        // File mtime is more accurate than updatedAt (updates with every message)
+        const agentDirs = [config.agentId, (config as any).agentIdFallback].filter(Boolean);
+        let lastActivity = session?.updatedAt || 0;
+        for (const dir of agentDirs) {
+          try {
+            const fileStat = await stat(path.join(OPENCLAW_ROOT, `agents/${dir}/sessions/sessions.json`));
+            lastActivity = Math.max(lastActivity, fileStat.mtimeMs);
+          } catch {}
+        }
 
+        if (lastActivity > 0) {
+          const timeSinceUpdate = now - lastActivity;
           if (timeSinceUpdate < 5 * 60 * 1000) {
-            // Active in last 5 minutes
-            agents.push({
-              ...config,
-              status: "working",
-              currentTask: session.lastHeartbeatText || "Active session",
-              lastActivity: session.updatedAt,
-            });
+            agents.push({ ...config, status: "working", currentTask: session?.lastHeartbeatText || "Active session", lastActivity });
           } else if (timeSinceUpdate < 30 * 60 * 1000) {
-            // Idle (5-30 minutes)
-            agents.push({
-              ...config,
-              status: "idle",
-              lastActivity: session.updatedAt,
-            });
+            agents.push({ ...config, status: "idle", lastActivity });
           } else {
-            // Offline (>30 minutes)
-            agents.push({
-              ...config,
-              status: "offline",
-              lastActivity: session.updatedAt,
-            });
+            agents.push({ ...config, status: "offline", lastActivity });
           }
         } else {
-          agents.push({
-            ...config,
-            status: "offline",
-          });
+          agents.push({ ...config, status: "offline" });
         }
       }
     }

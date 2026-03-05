@@ -2,7 +2,11 @@
 
 import { Search, Pause, Send } from "lucide-react";
 
-export default function TopBar() {
+interface TopBarProps {
+  onPingSmarty?: () => void;
+}
+
+export default function TopBar({ onPingSmarty }: TopBarProps) {
   return (
     <header
       className="h-14 flex items-center justify-between px-5 border-b"
@@ -45,7 +49,8 @@ export default function TopBar() {
 
         {/* Ping Agent */}
         <button
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium"
+          onClick={onPingSmarty}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium hover:opacity-90 transition-opacity"
           style={{
             background: "var(--accent)",
             color: "white",

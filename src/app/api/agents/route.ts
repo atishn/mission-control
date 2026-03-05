@@ -40,7 +40,7 @@ export async function GET() {
     }
 
     // Read subagent runs
-    const subagenRunsPath = path.join(OPENCLAW_ROOT, "subagents/runs.json");
+    const subagentRunsPath = path.join(OPENCLAW_ROOT, "subagents/runs.json");
     let subagentRuns: Record<string, any> = {};
     try {
       const runsRaw = await readFile(subagentRunsPath, "utf-8");

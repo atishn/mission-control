@@ -97,14 +97,28 @@ export async function GET() {
         const fallbackKey = (config as any).agentIdFallback ? `agent:${(config as any).agentIdFallback}:main` : null;
         const session = sessions[sessionKey] || (fallbackKey ? sessions[fallbackKey] : null);
 
-        // File mtime is more accurate than updatedAt (updates with every message)
+        // JSONL transcript mtime is most accurate — appended to with every message
         const agentDirs = [config.agentId, (config as any).agentIdFallback].filter(Boolean);
         let lastActivity = session?.updatedAt || 0;
-        for (const dir of agentDirs) {
-          try {
-            const fileStat = await stat(path.join(OPENCLAW_ROOT, `agents/${dir}/sessions/sessions.json`));
-            lastActivity = Math.max(lastActivity, fileStat.mtimeMs);
-          } catch {}
+
+        if (session?.sessionId) {
+          for (const dir of agentDirs) {
+            try {
+              const fileStat = await stat(path.join(OPENCLAW_ROOT, `agents/${dir}/sessions/${session.sessionId}.jsonl`));
+              lastActivity = Math.max(lastActivity, fileStat.mtimeMs);
+              break;
+            } catch {}
+          }
+        }
+
+        // Fallback: sessions.json mtime
+        if (lastActivity === (session?.updatedAt || 0)) {
+          for (const dir of agentDirs) {
+            try {
+              const fileStat = await stat(path.join(OPENCLAW_ROOT, `agents/${dir}/sessions/sessions.json`));
+              lastActivity = Math.max(lastActivity, fileStat.mtimeMs);
+            } catch {}
+          }
         }
 
         if (lastActivity > 0) {

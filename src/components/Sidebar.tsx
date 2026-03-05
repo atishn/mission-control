@@ -15,9 +15,11 @@ import {
   Factory,
   GitBranch,
   MessageSquare,
+  MessageCircle,
 } from "lucide-react";
 
 const navItems = [
+  { href: "/chat", label: "Chat", icon: MessageCircle },
   { href: "/tasks", label: "Tasks", icon: CheckSquare },
   { href: "/calendar", label: "Calendar", icon: Calendar },
   { href: "/projects", label: "Projects", icon: FolderKanban },

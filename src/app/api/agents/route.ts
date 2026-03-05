@@ -1,0 +1,140 @@
+import { NextResponse } from "next/server";
+import { readFile } from "fs/promises";
+import path from "path";
+import { OPENCLAW_ROOT } from "@/lib/config";
+
+interface AgentStatus {
+  id: string;
+  name: string;
+  emoji: string;
+  color: string;
+  status: "working" | "idle" | "offline" | "standup";
+  currentTask?: string;
+  lastActivity?: number;
+}
+
+const AGENT_CONFIGS = [
+  { id: "smarty", name: "Smarty", emoji: "💡", color: "var(--accent)", agentId: "main" },
+  { id: "scout", name: "Scout", emoji: "🔍", color: "var(--green)", agentId: "scout" },
+  { id: "architect", name: "Architect", emoji: "🏗️", color: "var(--blue)", subagent: true },
+  { id: "developer", name: "Developer", emoji: "⚡", color: "var(--purple)", subagent: true },
+  { id: "tester", name: "Tester", emoji: "🧪", color: "var(--orange)", subagent: true },
+  { id: "designer", name: "Designer", emoji: "🎨", color: "var(--cyan)", subagent: true },
+  { id: "planner", name: "Planner", emoji: "📋", color: "var(--yellow)", subagent: true },
+  { id: "researcher", name: "Researcher", emoji: "📚", color: "var(--red)", subagent: true },
+];
+
+export async function GET() {
+  try {
+    const now = Date.now();
+    const agents: AgentStatus[] = [];
+
+    // Read main agent sessions
+    const sessionsPath = path.join(OPENCLAW_ROOT, "agents/main/sessions/sessions.json");
+    let sessions: Record<string, any> = {};
+    try {
+      const sessionsRaw = await readFile(sessionsPath, "utf-8");
+      sessions = JSON.parse(sessionsRaw);
+    } catch {
+      // Sessions file doesn't exist or can't be read
+    }
+
+    // Read subagent runs
+    const subagenRunsPath = path.join(OPENCLAW_ROOT, "subagents/runs.json");
+    let subagentRuns: Record<string, any> = {};
+    try {
+      const runsRaw = await readFile(subagentRunsPath, "utf-8");
+      const runsData = JSON.parse(runsRaw);
+      subagentRuns = runsData.runs || {};
+    } catch {
+      // Runs file doesn't exist
+    }
+
+    // Process each agent
+    for (const config of AGENT_CONFIGS) {
+      if (config.subagent) {
+        // Check if this sub-agent has active runs
+        const activeRuns = Object.values(subagentRuns).filter((run: any) => {
+          return (
+            run.label?.toLowerCase().includes(config.id) &&
+            run.status === "running"
+          );
+        });
+
+        if (activeRuns.length > 0) {
+          const run = activeRuns[0] as any;
+          agents.push({
+            ...config,
+            status: "working",
+            currentTask: run.task || `Active run`,
+            lastActivity: run.startedAt || now,
+          });
+        } else {
+          // Check for recent completed runs
+          const recentRuns = Object.values(subagentRuns).filter((run: any) => {
+            return (
+              run.label?.toLowerCase().includes(config.id) &&
+              run.completedAt &&
+              now - run.completedAt < 5 * 60 * 1000 // Last 5 minutes
+            );
+          });
+
+          if (recentRuns.length > 0) {
+            agents.push({
+              ...config,
+              status: "idle",
+              lastActivity: (recentRuns[0] as any).completedAt,
+            });
+          } else {
+            agents.push({
+              ...config,
+              status: "offline",
+            });
+          }
+        }
+      } else {
+        // Lead agent (Smarty or Scout)
+        const sessionKey = `agent:${config.agentId}:main`;
+        const session = sessions[sessionKey];
+
+        if (session && session.updatedAt) {
+          const timeSinceUpdate = now - session.updatedAt;
+
+          if (timeSinceUpdate < 5 * 60 * 1000) {
+            // Active in last 5 minutes
+            agents.push({
+              ...config,
+              status: "working",
+              currentTask: session.lastHeartbeatText || "Active session",
+              lastActivity: session.updatedAt,
+            });
+          } else if (timeSinceUpdate < 30 * 60 * 1000) {
+            // Idle (5-30 minutes)
+            agents.push({
+              ...config,
+              status: "idle",
+              lastActivity: session.updatedAt,
+            });
+          } else {
+            // Offline (>30 minutes)
+            agents.push({
+              ...config,
+              status: "offline",
+              lastActivity: session.updatedAt,
+            });
+          }
+        } else {
+          agents.push({
+            ...config,
+            status: "offline",
+          });
+        }
+      }
+    }
+
+    return NextResponse.json({ agents });
+  } catch (err) {
+    console.error("Failed to read agent status:", err);
+    return NextResponse.json({ agents: [] });
+  }
+}

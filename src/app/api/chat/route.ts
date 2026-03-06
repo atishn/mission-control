@@ -34,7 +34,6 @@ export async function GET() {
     for (const line of raw.trim().split("\n")) {
       try {
         const entry = JSON.parse(line);
-        // Format: { type: "message", timestamp: ISO, message: { role, content } }
         if (entry.type !== "message" || !entry.message) continue;
         const msg = entry.message;
         if (msg.role !== "user" && msg.role !== "assistant") continue;
@@ -50,6 +49,22 @@ export async function GET() {
             .trim();
         }
         if (!text) continue;
+
+        // Clean user messages — strip OpenClaw metadata envelope
+        if (msg.role === "user") {
+          // Pattern 1: "[Day YYYY-MM-DD HH:MM TZ] actual message"
+          const tsMatch = text.match(/^\[[A-Za-z]+ \d{4}-\d{2}-\d{2} \d{2}:\d{2} \w+\]\s*/);
+          if (tsMatch) {
+            text = text.slice(tsMatch[0].length).trim();
+          } else {
+            // Pattern 2: metadata envelope ending with ``` fence, actual message after
+            const lastFence = text.lastIndexOf("\n```\n");
+            if (lastFence !== -1) {
+              text = text.slice(lastFence + 5).trim();
+            }
+          }
+          if (!text) continue; // skip if nothing left after stripping
+        }
 
         const ts = entry.timestamp ? new Date(entry.timestamp).getTime() : 0;
         messages.push({ role: msg.role, content: text, timestamp: ts });

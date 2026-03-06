@@ -11,6 +11,8 @@ import {
   AlertCircle,
   Sparkles,
   Power,
+  Plus,
+  X,
 } from "lucide-react";
 
 // Color palette for jobs — cycles through these
@@ -37,6 +39,21 @@ export default function CalendarPage() {
   const [selectedJob, setSelectedJob] = useState<ParsedJob | null>(null);
   const [view, setView] = useState<"week" | "today">("week");
 
+  // Add event modal
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [agents, setAgents] = useState<{ id: string; name: string; emoji: string }[]>([]);
+  const [addForm, setAddForm] = useState({
+    name: "",
+    description: "",
+    agentId: "smarty",
+    type: "recurring" as "one-time" | "recurring",
+    date: new Date().toISOString().split("T")[0],
+    time: "09:00",
+    days: [1, 2, 3, 4, 5] as number[],
+    timezone: "America/New_York",
+  });
+
   const fetchJobs = useCallback(async () => {
     try {
       const res = await fetch("/api/cron-jobs");
@@ -53,6 +70,43 @@ export default function CalendarPage() {
   useEffect(() => {
     fetchJobs();
   }, [fetchJobs]);
+
+  useEffect(() => {
+    fetch("/api/agents")
+      .then((r) => r.json())
+      .then((d) => setAgents(d.agents || []))
+      .catch(() => {});
+  }, []);
+
+  async function handleAddEvent() {
+    if (!addForm.name.trim()) return;
+    setSubmitting(true);
+    try {
+      let schedule;
+      if (addForm.type === "one-time") {
+        schedule = { kind: "at", at: new Date(`${addForm.date}T${addForm.time}:00`).toISOString() };
+      } else {
+        const [hour, minute] = addForm.time.split(":").map(Number);
+        const dowExpr = addForm.days.length === 7 ? "*" : addForm.days.join(",");
+        schedule = { kind: "cron", expr: `${minute} ${hour} * * ${dowExpr}`, tz: addForm.timezone };
+      }
+      await fetch("/api/cron-jobs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: addForm.name.trim(),
+          description: addForm.description.trim(),
+          agentId: addForm.agentId,
+          schedule,
+        }),
+      });
+      setShowAddModal(false);
+      setAddForm((f) => ({ ...f, name: "", description: "" }));
+      fetchJobs();
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   const now = new Date();
   const weekBase = new Date(now);
@@ -156,6 +210,17 @@ export default function CalendarPage() {
             }}
           >
             Today
+          </button>
+
+          <div className="w-px h-6 mx-1" style={{ background: "var(--border)" }} />
+
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium"
+            style={{ background: "var(--accent)", color: "white" }}
+          >
+            <Plus size={13} />
+            Add Event
           </button>
         </div>
       </div>
@@ -432,6 +497,205 @@ export default function CalendarPage() {
                   </div>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Event Modal */}
+      {showAddModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          style={{ background: "rgba(0,0,0,0.6)" }}
+          onClick={() => setShowAddModal(false)}
+        >
+          <div
+            className="w-full max-w-md rounded-xl border overflow-hidden"
+            style={{ background: "var(--bg-secondary)", borderColor: "var(--border)" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: "var(--border)" }}>
+              <h2 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>New Event</h2>
+              <button onClick={() => setShowAddModal(false)} style={{ color: "var(--text-muted)" }}>
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Form */}
+            <div className="px-5 py-4 space-y-4">
+              {/* Name */}
+              <input
+                type="text"
+                placeholder="Event name"
+                value={addForm.name}
+                onChange={(e) => setAddForm((f) => ({ ...f, name: e.target.value }))}
+                className="w-full rounded-md px-3 py-2 text-sm outline-none"
+                style={{
+                  background: "var(--bg-tertiary)",
+                  border: "1px solid var(--border)",
+                  color: "var(--text-primary)",
+                }}
+              />
+
+              {/* Description / Task */}
+              <textarea
+                placeholder="Task description — this is what the agent will execute"
+                value={addForm.description}
+                onChange={(e) => setAddForm((f) => ({ ...f, description: e.target.value }))}
+                rows={3}
+                className="w-full rounded-md px-3 py-2 text-sm outline-none resize-none"
+                style={{
+                  background: "var(--bg-tertiary)",
+                  border: "1px solid var(--border)",
+                  color: "var(--text-primary)",
+                }}
+              />
+
+              {/* Agent */}
+              <div>
+                <label className="text-[11px] font-medium block mb-1.5" style={{ color: "var(--text-secondary)" }}>
+                  Assign to agent
+                </label>
+                <select
+                  value={addForm.agentId}
+                  onChange={(e) => setAddForm((f) => ({ ...f, agentId: e.target.value }))}
+                  className="w-full rounded-md px-3 py-2 text-sm outline-none"
+                  style={{
+                    background: "var(--bg-tertiary)",
+                    border: "1px solid var(--border)",
+                    color: "var(--text-primary)",
+                  }}
+                >
+                  {agents.length > 0
+                    ? agents.map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.emoji} {a.name}
+                        </option>
+                      ))
+                    : [
+                        { id: "smarty", name: "Smarty", emoji: "💡" },
+                        { id: "scout", name: "Scout", emoji: "🔍" },
+                        { id: "developer", name: "Developer", emoji: "⚡" },
+                        { id: "researcher", name: "Researcher", emoji: "📚" },
+                      ].map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.emoji} {a.name}
+                        </option>
+                      ))}
+                </select>
+              </div>
+
+              {/* Schedule type toggle */}
+              <div>
+                <label className="text-[11px] font-medium block mb-1.5" style={{ color: "var(--text-secondary)" }}>
+                  Schedule
+                </label>
+                <div className="flex rounded-md overflow-hidden border" style={{ borderColor: "var(--border)" }}>
+                  {(["recurring", "one-time"] as const).map((t) => (
+                    <button
+                      key={t}
+                      onClick={() => setAddForm((f) => ({ ...f, type: t }))}
+                      className="flex-1 py-1.5 text-xs font-medium capitalize"
+                      style={{
+                        background: addForm.type === t ? "var(--accent)" : "var(--bg-tertiary)",
+                        color: addForm.type === t ? "white" : "var(--text-secondary)",
+                      }}
+                    >
+                      {t}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* One-time: date + time */}
+              {addForm.type === "one-time" && (
+                <div className="flex gap-2">
+                  <input
+                    type="date"
+                    value={addForm.date}
+                    onChange={(e) => setAddForm((f) => ({ ...f, date: e.target.value }))}
+                    className="flex-1 rounded-md px-3 py-2 text-sm outline-none"
+                    style={{
+                      background: "var(--bg-tertiary)",
+                      border: "1px solid var(--border)",
+                      color: "var(--text-primary)",
+                    }}
+                  />
+                  <input
+                    type="time"
+                    value={addForm.time}
+                    onChange={(e) => setAddForm((f) => ({ ...f, time: e.target.value }))}
+                    className="w-32 rounded-md px-3 py-2 text-sm outline-none"
+                    style={{
+                      background: "var(--bg-tertiary)",
+                      border: "1px solid var(--border)",
+                      color: "var(--text-primary)",
+                    }}
+                  />
+                </div>
+              )}
+
+              {/* Recurring: days + time */}
+              {addForm.type === "recurring" && (
+                <div className="space-y-2">
+                  <div className="flex gap-1">
+                    {DAY_NAMES.map((d, i) => (
+                      <button
+                        key={i}
+                        onClick={() =>
+                          setAddForm((f) => ({
+                            ...f,
+                            days: f.days.includes(i) ? f.days.filter((x) => x !== i) : [...f.days, i].sort(),
+                          }))
+                        }
+                        className="flex-1 py-1 rounded text-[11px] font-medium"
+                        style={{
+                          background: addForm.days.includes(i) ? "var(--accent)" : "var(--bg-tertiary)",
+                          color: addForm.days.includes(i) ? "white" : "var(--text-muted)",
+                          border: "1px solid var(--border)",
+                        }}
+                      >
+                        {d}
+                      </button>
+                    ))}
+                  </div>
+                  <input
+                    type="time"
+                    value={addForm.time}
+                    onChange={(e) => setAddForm((f) => ({ ...f, time: e.target.value }))}
+                    className="w-full rounded-md px-3 py-2 text-sm outline-none"
+                    style={{
+                      background: "var(--bg-tertiary)",
+                      border: "1px solid var(--border)",
+                      color: "var(--text-primary)",
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-end gap-2 px-5 py-3 border-t" style={{ borderColor: "var(--border)" }}>
+              <button
+                onClick={() => setShowAddModal(false)}
+                className="px-4 py-1.5 rounded-md text-xs"
+                style={{ color: "var(--text-secondary)", background: "var(--bg-tertiary)", border: "1px solid var(--border)" }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleAddEvent}
+                disabled={submitting || !addForm.name.trim()}
+                className="px-4 py-1.5 rounded-md text-xs font-medium"
+                style={{
+                  background: addForm.name.trim() ? "var(--accent)" : "var(--bg-hover)",
+                  color: addForm.name.trim() ? "white" : "var(--text-muted)",
+                  opacity: submitting ? 0.6 : 1,
+                }}
+              >
+                {submitting ? "Creating..." : "Create Event"}
+              </button>
             </div>
           </div>
         </div>

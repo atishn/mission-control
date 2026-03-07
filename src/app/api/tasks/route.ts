@@ -16,6 +16,9 @@ interface Task {
   feedback: string | null;
   movedToAtishAt: string | null;
   kept?: boolean;
+  tags: string[];
+  context: string;
+  attachments: { name: string; type: string }[];
   createdAt: string;
   updatedAt: string;
 }
@@ -76,6 +79,9 @@ export async function POST(req: Request) {
     status: body.status || "normal",
     feedback: null,
     movedToAtishAt: null,
+    tags: Array.isArray(body.tags) ? body.tags : [],
+    context: body.context || "",
+    attachments: Array.isArray(body.attachments) ? body.attachments : [],
     createdAt: now,
     updatedAt: now,
   };
